@@ -1,0 +1,41 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: stock-service
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/demo_stock?useSSL=false&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: 123456                  # ← 改成你的密码
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 3
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    publisher-confirm-type: correlated  # 开启发送确认
+    publisher-returns: true
+    template:
+      mandatory: true
+
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848    # ← 和你现有项目保持一致
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+logging:
+  level:
+    com.demo.stock: DEBUG
+    org.springframework.amqp: INFO

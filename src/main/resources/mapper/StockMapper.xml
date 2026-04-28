@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demo.stock.mapper.StockMapper">
+
+    <select id="findByProductId" resultType="com.demo.stock.entity.Stock">
+        SELECT id, product_id, product_name, quantity, version
+        FROM stock
+        WHERE product_id = #{productId}
+    </select>
+
+    <!--
+        乐观锁更新：
+        只有当前 version 和数据库里的 version 一致才更新，
+        同时 version+1，防止并发超卖。
+        返回0说明被别人抢先了，需要重试。
+    -->
+    <update id="deductWithVersion">
+        UPDATE stock
+        SET quantity = quantity - #{quantity},
+            version  = version  + 1
+        WHERE product_id = #{productId}
+          AND version    = #{version}
+          AND quantity  >= #{quantity}
+    </update>
+
+</mapper>
