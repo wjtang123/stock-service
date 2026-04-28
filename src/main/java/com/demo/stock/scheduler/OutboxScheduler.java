@@ -2,6 +2,9 @@ package com.demo.stock.scheduler;
 
 import com.demo.stock.entity.OutboxMessage;
 import com.demo.stock.mapper.OutboxMessageMapper;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.core.MessageBuilder;
+import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,12 +42,12 @@ public class OutboxScheduler {
                 // CorrelationData 携带消息ID，ConfirmCallback 里用来对应消息
                 CorrelationData correlation = new CorrelationData(msg.getMessageId());
 
-                rabbitTemplate.convertAndSend(
-                        msg.getExchange(),
-                        msg.getRoutingKey(),
-                        msg.getPayload(),   // JSON字符串
-                        correlation
-                );
+                // payload 已经是 JSON 字符串，直接构造 Message 发送，避免 Jackson 二次序列化
+                Message message = MessageBuilder
+                        .withBody(msg.getPayload().getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                        .setContentType(MessageProperties.CONTENT_TYPE_JSON)
+                        .build();
+                rabbitTemplate.send(msg.getExchange(), msg.getRoutingKey(), message, correlation);
 
                 // 发送成功（只是投递到Broker，不代表消费者处理成功）
                 // 立刻标记 SENT，减少重复发送

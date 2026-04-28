@@ -2,13 +2,26 @@ package com.demo.stock.config;
 
 import org.springframework.amqp.core.*;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class RabbitConfig {
+
+    @Bean
+    public RabbitAdmin rabbitAdmin(ConnectionFactory connectionFactory) {
+        return new RabbitAdmin(connectionFactory);
+    }
+
+    // Spring 上下文完全启动后立即声明所有队列/交换机/绑定，不依赖懒加载连接
+    @Bean
+    public ApplicationRunner rabbitInitializer(RabbitAdmin rabbitAdmin) {
+        return args -> rabbitAdmin.initialize();
+    }
 
     // Exchange / Queue / RoutingKey 名称常量
     public static final String STOCK_EXCHANGE       = "stock.exchange";
