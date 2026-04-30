@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>RabbitMQ 消息流程图</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; padding: 24px; }
+  h1 { text-align: center; font-size: 22px; color: #7dd3fc; margin-bottom: 8px; }
+  .subtitle { text-align: center; color: #64748b; font-size: 13px; margin-bottom: 24px; }
+
+  .tabs { display: flex; justify-content: center; gap: 8px; margin-bottom: 24px; }
+  .tab { padding: 8px 20px; border-radius: 20px; cursor: pointer; font-size: 13px; border: 1px solid #334155; background: #1e293b; color: #94a3b8; transition: all 0.2s; }
+  .tab.active { background: #0ea5e9; border-color: #0ea5e9; color: #fff; }
+
+  .scene { display: none; }
+  .scene.active { display: block; }
+
+  /* ===== FLOW DIAGRAM ===== */
+  .flow-canvas { position: relative; width: 100%; height: 420px; background: #1e293b; border-radius: 16px; overflow: hidden; border: 1px solid #334155; }
+
+  .node { position: absolute; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; cursor: default; user-select: none; transition: transform 0.2s, box-shadow 0.2s; }
+  .node:hover { transform: scale(1.05); }
+  .node .label { font-size: 11px; margin-top: 4px; opacity: 0.8; font-weight: 400; }
+  .node .icon { font-size: 22px; }
+
+  .producer { width: 110px; height: 80px; left: 30px; top: 170px; background: linear-gradient(135deg, #059669, #10b981); box-shadow: 0 0 20px #10b98140; }
+  .exchange { width: 120px; height: 80px; left: 260px; top: 170px; background: linear-gradient(135deg, #7c3aed, #8b5cf6); box-shadow: 0 0 20px #8b5cf640; }
+  .queue-main { width: 120px; height: 70px; left: 480px; top: 100px; background: linear-gradient(135deg, #0369a1, #0ea5e9); box-shadow: 0 0 20px #0ea5e940; }
+  .queue-dead { width: 120px; height: 70px; left: 480px; top: 240px; background: linear-gradient(135deg, #991b1b, #ef4444); box-shadow: 0 0 20px #ef444440; opacity: 0.6; }
+  .consumer { width: 110px; height: 70px; left: 710px; top: 100px; background: linear-gradient(135deg, #b45309, #f59e0b); box-shadow: 0 0 20px #f59e0b40; }
+  .consumer-dead { width: 110px; height: 70px; left: 710px; top: 240px; background: linear-gradient(135deg, #6b1d1d, #dc2626); box-shadow: 0 0 20px #dc262640; opacity: 0.6; }
+
+  svg.arrows { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+  svg.arrows line, svg.arrows path { stroke: #475569; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+  svg.arrows text { fill: #64748b; font-size: 10px; }
+  svg.arrows .key-label { fill: #a78bfa; font-size: 10px; font-style: italic; }
+
+  .msg-ball { position: absolute; width: 28px; height: 28px; border-radius: 50%; background: #fbbf24; border: 2px solid #f59e0b; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; color: #1e293b; opacity: 0; z-index: 10; pointer-events: none; box-shadow: 0 0 12px #fbbf2480; transition: none; }
+
+  .controls { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 16px; }
+  .btn { padding: 10px 24px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s; }
+  .btn-primary { background: #0ea5e9; color: #fff; }
+  .btn-primary:hover { background: #0284c7; }
+  .btn-danger { background: #ef4444; color: #fff; }
+  .btn-danger:hover { background: #dc2626; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .log { background: #0f172a; border-radius: 10px; padding: 12px 16px; margin-top: 16px; height: 100px; overflow-y: auto; font-size: 12px; font-family: monospace; border: 1px solid #1e293b; }
+  .log-line { padding: 2px 0; border-bottom: 1px solid #1e293b20; }
+  .log-line.success { color: #4ade80; }
+  .log-line.error { color: #f87171; }
+  .log-line.info { color: #7dd3fc; }
+  .log-line.warn { color: #fbbf24; }
+
+  /* ===== EXCHANGE TYPE COMPARE ===== */
+  .compare-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .compare-card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
+  .compare-card h3 { font-size: 14px; margin-bottom: 6px; }
+  .compare-card .type-badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 11px; margin-bottom: 12px; }
+  .direct-badge { background: #7c3aed30; color: #a78bfa; border: 1px solid #7c3aed; }
+  .fanout-badge { background: #059669 30; color: #34d399; border: 1px solid #059669; }
+  .topic-badge  { background: #0369a130; color: #38bdf8; border: 1px solid #0369a1; }
+  .mini-canvas { position: relative; height: 180px; background: #0f172a; border-radius: 8px; overflow: hidden; margin-bottom: 12px; }
+  .mini-node { position: absolute; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; text-align: center; padding: 4px; }
+  .mini-exc { width: 70px; height: 36px; left: 20px; top: 72px; background: #6d28d9; }
+  .mini-q1  { width: 70px; height: 30px; right: 20px; top: 20px; background: #0369a1; }
+  .mini-q2  { width: 70px; height: 30px; right: 20px; top: 75px; background: #0369a1; }
+  .mini-q3  { width: 70px; height: 30px; right: 20px; top: 130px; background: #0369a1; }
+  .mini-q-dim { opacity: 0.25; }
+  svg.mini-arrows { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+  svg.mini-arrows line { stroke-width: 1.5; fill: none; marker-end: url(#arrow2); }
+  .active-line { stroke: #a78bfa; }
+  .dim-line    { stroke: #334155; }
+  .compare-card p { font-size: 12px; color: #94a3b8; line-height: 1.6; }
+  .compare-card code { background: #0f172a; padding: 1px 5px; border-radius: 4px; font-size: 11px; color: #fbbf24; }
+
+  /* ===== YOUR PROJECT ===== */
+  .project-card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; margin-bottom: 16px; }
+  .project-card h3 { font-size: 13px; color: #7dd3fc; margin-bottom: 12px; }
+  .flow-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .pill { padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .pill-green  { background: #05966920; color: #34d399; border: 1px solid #059669; }
+  .pill-purple { background: #7c3aed20; color: #a78bfa; border: 1px solid #7c3aed; }
+  .pill-blue   { background: #0369a120; color: #38bdf8; border: 1px solid #0369a1; }
+  .pill-red    { background: #99191920; color: #f87171; border: 1px solid #991919; }
+  .pill-yellow { background: #92400e20; color: #fbbf24; border: 1px solid #92400e; }
+  .arrow-text  { color: #475569; font-size: 12px; }
+  .key-chip    { font-size: 11px; color: #a78bfa; background: #2e1065; padding: 2px 8px; border-radius: 10px; font-family: monospace; }
+  .desc        { font-size: 12px; color: #64748b; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<h1>🐰 RabbitMQ 消息流程图</h1>
+<p class="subtitle">基于你的 stock-service 项目，点击下方按钮发送消息观察流转过程</p>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('animate')">动画演示</div>
+  <div class="tab" onclick="switchTab('exchange')">Exchange 类型对比</div>
+  <div class="tab" onclick="switchTab('project')">你的项目结构</div>
+</div>
+
+<!-- ===== TAB 1: 动画演示 ===== -->
+<div class="scene active" id="scene-animate">
+  <div class="flow-canvas" id="canvas">
+    <svg class="arrows">
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="#475569"/>
+        </marker>
+      </defs>
+      <!-- Producer → Exchange -->
+      <line x1="140" y1="210" x2="258" y2="210"/>
+      <text x="160" y="203" class="key-label">Routing Key:</text>
+      <text x="160" y="214" class="key-label">"stock.deducted"</text>
+      <!-- Exchange → Queue main -->
+      <line x1="380" y1="195" x2="478" y2="155"/>
+      <text x="400" y="168">Binding Key match ✓</text>
+      <!-- Exchange → Queue dead (dashed) -->
+      <line x1="380" y1="225" x2="478" y2="265" stroke-dasharray="4"/>
+      <text x="390" y="258" style="fill:#ef4444;font-size:10px">失败后转入</text>
+      <!-- Queue main → Consumer -->
+      <line x1="600" y1="135" x2="708" y2="135"/>
+      <!-- Queue dead → Consumer dead -->
+      <line x1="600" y1="268" x2="708" y2="275"/>
+    </svg>
+
+    <!-- Nodes -->
+    <div class="node producer">
+      <span class="icon">📤</span>
+      生产者
+      <span class="label">Producer</span>
+    </div>
+    <div class="node exchange">
+      <span class="icon">🔀</span>
+      stock.exchange
+      <span class="label">DirectExchange</span>
+    </div>
+    <div class="node queue-main" id="qMain">
+      <span class="icon">📬</span>
+      stock.deducted.queue
+      <span class="label">主队列</span>
+    </div>
+    <div class="node queue-dead" id="qDead">
+      <span class="icon">💀</span>
+      dead.queue
+      <span class="label">死信队列</span>
+    </div>
+    <div class="node consumer" id="consMain">
+      <span class="icon">⚙️</span>
+      消费者
+      <span class="label">Consumer</span>
+    </div>
+    <div class="node consumer-dead" id="consDead">
+      <span class="icon">🔧</span>
+      人工处理
+      <span class="label">Dead Consumer</span>
+    </div>
+
+    <!-- Message ball -->
+    <div class="msg-ball" id="msgBall">MQ</div>
+  </div>
+
+  <div class="controls">
+    <button class="btn btn-primary" id="btnSend" onclick="sendMessage(false)">📤 发送正常消息</button>
+    <button class="btn btn-danger" id="btnFail" onclick="sendMessage(true)">💥 发送失败消息</button>
+  </div>
+
+  <div class="log" id="log">
+    <div class="log-line info">▶ 准备就绪，点击按钮发送消息...</div>
+  </div>
+</div>
+
+<!-- ===== TAB 2: Exchange 类型对比 ===== -->
+<div class="scene" id="scene-exchange">
+  <div class="compare-grid">
+
+    <!-- Direct -->
+    <div class="compare-card">
+      <h3>Direct Exchange</h3>
+      <span class="type-badge direct-badge">你的项目正在使用</span>
+      <div class="mini-canvas">
+        <svg class="mini-arrows">
+          <defs>
+            <marker id="arrow2" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L7,3 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <line x1="90" y1="89" x2="148" y2="35" class="active-line" marker-end="url(#arrow2)" style="marker-end:url(#arrow2);stroke:#a78bfa"/>
+          <line x1="90" y1="89" x2="148" y2="90" class="dim-line" marker-end="url(#arrow2)" style="stroke:#334155"/>
+          <line x1="90" y1="89" x2="148" y2="145" class="dim-line" marker-end="url(#arrow2)" style="stroke:#334155"/>
+          <text x="92" y="62" style="fill:#a78bfa;font-size:9px">key完全匹配</text>
+        </svg>
+        <div class="mini-node mini-exc">Exchange</div>
+        <div class="mini-node mini-q1">Queue A ✓</div>
+        <div class="mini-node mini-q2 mini-q-dim">Queue B</div>
+        <div class="mini-node mini-q3 mini-q-dim">Queue C</div>
+      </div>
+      <p>Routing Key <strong>完全相等</strong>才转发。<br>
+      发 <code>"stock.deducted"</code> → 只进绑定了 <code>"stock.deducted"</code> 的队列。</p>
+    </div>
+
+    <!-- Fanout -->
+    <div class="compare-card">
+      <h3>Fanout Exchange</h3>
+      <span class="type-badge fanout-badge">广播模式</span>
+      <div class="mini-canvas">
+        <svg class="mini-arrows">
+          <line x1="90" y1="89" x2="148" y2="35" style="stroke:#34d399;stroke-width:1.5" marker-end="url(#arrow2)"/>
+          <line x1="90" y1="89" x2="148" y2="90" style="stroke:#34d399;stroke-width:1.5" marker-end="url(#arrow2)"/>
+          <line x1="90" y1="89" x2="148" y2="145" style="stroke:#34d399;stroke-width:1.5" marker-end="url(#arrow2)"/>
+          <text x="30" y="160" style="fill:#34d399;font-size:9px">忽略Routing Key</text>
+        </svg>
+        <div class="mini-node mini-exc">Exchange</div>
+        <div class="mini-node mini-q1">Queue A ✓</div>
+        <div class="mini-node mini-q2">Queue B ✓</div>
+        <div class="mini-node mini-q3">Queue C ✓</div>
+      </div>
+      <p>完全<strong>忽略 Routing Key</strong>，广播到所有绑定的队列。<br>
+      适合：日志广播、消息通知等场景。</p>
+    </div>
+
+    <!-- Topic -->
+    <div class="compare-card">
+      <h3>Topic Exchange</h3>
+      <span class="type-badge topic-badge">通配符模式</span>
+      <div class="mini-canvas">
+        <svg class="mini-arrows">
+          <line x1="90" y1="89" x2="148" y2="35" style="stroke:#38bdf8;stroke-width:1.5" marker-end="url(#arrow2)"/>
+          <line x1="90" y1="89" x2="148" y2="90" class="dim-line" style="stroke:#334155;stroke-width:1.5" marker-end="url(#arrow2)"/>
+          <line x1="90" y1="89" x2="148" y2="145" style="stroke:#38bdf8;stroke-width:1.5" marker-end="url(#arrow2)"/>
+          <text x="20" y="20" style="fill:#38bdf8;font-size:9px">*.error → A ✓</text>
+          <text x="20" y="32" style="fill:#38bdf8;font-size:9px"># → C ✓</text>
+        </svg>
+        <div class="mini-node mini-exc">Exchange</div>
+        <div class="mini-node mini-q1" style="font-size:9px">*.error ✓</div>
+        <div class="mini-node mini-q2 mini-q-dim" style="font-size:9px">*.info</div>
+        <div class="mini-node mini-q3" style="font-size:9px"># ✓</div>
+      </div>
+      <p>支持通配符：<code>*</code> 匹配一个词，<code>#</code> 匹配多个词。<br>
+      发 <code>"app.error"</code> → 匹配 <code>*.error</code> 和 <code>#</code> 的队列。</p>
+    </div>
+
+  </div>
+</div>
+
+<!-- ===== TAB 3: 你的项目 ===== -->
+<div class="scene" id="scene-project">
+
+  <div class="project-card">
+    <h3>正常消息链路</h3>
+    <div class="flow-row">
+      <span class="pill pill-green">📤 Producer<br><small>发送扣库存消息</small></span>
+      <span class="arrow-text">──<span class="key-chip">stock.deducted</span>──►</span>
+      <span class="pill pill-purple">🔀 stock.exchange<br><small>DirectExchange</small></span>
+      <span class="arrow-text">──<span class="key-chip">stock.deducted</span>──►</span>
+      <span class="pill pill-blue">📬 stock.deducted.queue</span>
+      <span class="arrow-text">────────────►</span>
+      <span class="pill pill-yellow">⚙️ Consumer<br><small>扣减库存</small></span>
+    </div>
+    <p class="desc">生产者用 Routing Key "stock.deducted" 发消息 → Exchange 匹配 Binding Key → 进入主队列 → 消费者处理 → ACK 确认</p>
+  </div>
+
+  <div class="project-card">
+    <h3>消费失败 → 死信链路</h3>
+    <div class="flow-row">
+      <span class="pill pill-blue">📬 stock.deducted.queue<br><small>重试耗尽</small></span>
+      <span class="arrow-text">──自动转发──►</span>
+      <span class="pill pill-purple">🔀 stock.dead.exchange<br><small>DirectExchange</small></span>
+      <span class="arrow-text">──<span class="key-chip">stock.dead</span>──►</span>
+      <span class="pill pill-red">💀 stock.dead.queue</span>
+      <span class="arrow-text">────────────►</span>
+      <span class="pill" style="background:#6b1d1d20;color:#fca5a5;border:1px solid #6b1d1d">🔧 人工排查</span>
+    </div>
+    <p class="desc">消费失败后由 x-dead-letter-exchange 参数自动路由，消息不丢失，等待人工处理</p>
+  </div>
+
+  <div class="project-card">
+    <h3>关键配置说明</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px">
+      <div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:6px">Queue 声明（QueueBuilder）</div>
+        <div style="font-size:11px;color:#94a3b8;line-height:1.8;background:#0f172a;padding:10px;border-radius:8px;font-family:monospace">
+          .withArgument(<span style="color:#fbbf24">"x-dead-letter-exchange"</span>, DEAD_EXCHANGE)<br>
+          .withArgument(<span style="color:#fbbf24">"x-dead-letter-routing-key"</span>, DEAD_ROUTING_KEY)
+        </div>
+        <div class="desc" style="margin-top:6px">告诉 RabbitMQ：消息死亡后转到哪个 Exchange，用什么 Routing Key</div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:6px">Binding 声明（BindingBuilder）</div>
+        <div style="font-size:11px;color:#94a3b8;line-height:1.8;background:#0f172a;padding:10px;border-radius:8px;font-family:monospace">
+          BindingBuilder<br>
+          &nbsp;.bind(stockDeductedQueue)<br>
+          &nbsp;.to(stockExchange)<br>
+          &nbsp;.with(<span style="color:#fbbf24">STOCK_DEDUCTED_KEY</span>)
+        </div>
+        <div class="desc" style="margin-top:6px">这里的 .with() 参数就是 Binding Key，Exchange 用它和 Routing Key 做匹配</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['animate','exchange','project'][i] === name));
+  document.querySelectorAll('.scene').forEach(s => s.classList.remove('active'));
+  document.getElementById('scene-' + name).classList.add('active');
+}
+
+const ball = document.getElementById('msgBall');
+let animating = false;
+
+function log(msg, type='info') {
+  const el = document.getElementById('log');
+  const line = document.createElement('div');
+  line.className = 'log-line ' + type;
+  const now = new Date().toLocaleTimeString('zh', {hour12:false});
+  line.textContent = `[${now}] ${msg}`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+function moveBall(x, y, duration) {
+  return new Promise(resolve => {
+    ball.style.transition = `left ${duration}ms ease, top ${duration}ms ease, opacity 0.3s`;
+    ball.style.left = (x - 14) + 'px';
+    ball.style.top  = (y - 14) + 'px';
+    setTimeout(resolve, duration + 50);
+  });
+}
+
+function showBall(x, y) {
+  ball.style.transition = 'opacity 0.3s';
+  ball.style.left = (x - 14) + 'px';
+  ball.style.top  = (y - 14) + 'px';
+  ball.style.opacity = '1';
+}
+
+function hideBall() {
+  ball.style.transition = 'opacity 0.3s';
+  ball.style.opacity = '0';
+}
+
+function flashNode(id, color) {
+  const el = document.getElementById(id) || document.querySelector('.' + id);
+  if (!el) return;
+  const orig = el.style.boxShadow;
+  el.style.boxShadow = `0 0 30px ${color}`;
+  setTimeout(() => el.style.boxShadow = orig, 600);
+}
+
+async function sendMessage(fail) {
+  if (animating) return;
+  animating = true;
+  document.getElementById('btnSend').disabled = true;
+  document.getElementById('btnFail').disabled = true;
+
+  ball.style.background = fail ? '#ef4444' : '#fbbf24';
+  ball.style.borderColor = fail ? '#dc2626' : '#f59e0b';
+  ball.textContent = fail ? '✗' : 'MQ';
+
+  // 1. Producer
+  log('Producer 发送消息，Routing Key = "stock.deducted"', 'info');
+  showBall(85, 210);
+  await sleep(500);
+
+  // 2. → Exchange
+  await moveBall(320, 210, 600);
+  log('消息到达 stock.exchange (DirectExchange)', 'info');
+  flashNode('exchange', '#a78bfa');
+  await sleep(400);
+
+  // 3. → Queue
+  await moveBall(540, 135, 600);
+  log('Binding Key 匹配 "stock.deducted" → 进入 stock.deducted.queue', 'success');
+  flashNode('qMain', '#0ea5e9');
+  await sleep(500);
+
+  if (!fail) {
+    // 4. → Consumer (success)
+    await moveBall(765, 135, 500);
+    log('消费者处理消息成功', 'success');
+    flashNode('consMain', '#f59e0b');
+    await sleep(300);
+    log('发送 ACK 确认，消息从队列移除 ✓', 'success');
+    hideBall();
+  } else {
+    // 4. Consumer fail
+    await moveBall(765, 135, 500);
+    log('消费者处理失败！开始重试...', 'warn');
+    flashNode('consMain', '#ef4444');
+    await sleep(300);
+    log('重试次数耗尽，消息转入死信...', 'warn');
+
+    // 5. → Dead Exchange
+    await moveBall(320, 270, 700);
+    log('路由到 stock.dead.exchange', 'error');
+    flashNode('exchange', '#ef4444');
+    await sleep(400);
+
+    // 6. → Dead Queue
+    await moveBall(540, 268, 600);
+    log('进入 stock.dead.queue ⚠️', 'error');
+    const qd = document.getElementById('qDead');
+    qd.style.opacity = '1';
+    qd.style.boxShadow = '0 0 30px #ef4444';
+    await sleep(300);
+    qd.style.opacity = '0.8';
+
+    // 7. → Dead Consumer
+    await moveBall(765, 275, 500);
+    log('等待人工排查处理...', 'error');
+    const cd = document.getElementById('consDead');
+    cd.style.opacity = '1';
+    cd.style.boxShadow = '0 0 20px #dc2626';
+    await sleep(500);
+    cd.style.opacity = '0.8';
+    hideBall();
+  }
+
+  await sleep(300);
+  animating = false;
+  document.getElementById('btnSend').disabled = false;
+  document.getElementById('btnFail').disabled = false;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+</script>
+</body>
+</html>
